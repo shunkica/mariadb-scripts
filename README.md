@@ -19,8 +19,8 @@ Workaround: delete the directories of the failed backups and run the script agai
 
 ## Install
 
-    yum install MariaDB-backup
-    mv run-mariabackup.sh /usr/local/sbin/
+    yum -y install MariaDB-backup
+    curl https://raw.githubusercontent.com/shunkica/run-mariabackup/master/run-mariabackup.sh --output /usr/local/sbin/run-mariabackup.sh
     chmod 700 /usr/local/sbin/run-mariabackup.sh
 
 ## Create a backup user
@@ -34,8 +34,8 @@ Workaround: delete the directories of the failed backups and run the script agai
 
 ## Crontab
 
-    #MySQL Backup, run every hour
-    0 */1 * * * MYSQL_PASSWORD=YourPassword /usr/local/sbin/run-mariabackup.sh > /var/log/run-mariabackup.log 2>&1
+    #MySQL Backup, run every hour at the 30th minute
+    30 */1 * * * MYSQL_PASSWORD=YourPassword /bin/bash /usr/local/sbin/run-mariabackup.sh >> /var/log/run-mariabackup.log 2>&1
 
 ---
 
@@ -77,7 +77,7 @@ mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backu
 # stop mairadb
 systemctl stop mariadb
 
-# empty datadir
+# move datadir
 mv /var/lib/mysql/ /var/lib/mysql_bak/
 
 # copy-back
