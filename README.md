@@ -17,9 +17,11 @@ Workaround: delete the directories of the failed backups and run the script agai
 
 ---
 
-## Install mariabackup
+## Install
 
     yum install MariaDB-backup
+    mv run-mariabackup.sh /usr/local/sbin/
+    chmod 700 /usr/local/sbin/run-mariabackup.sh
 
 ## Create a backup user
 
@@ -83,6 +85,9 @@ mariabackup --copy-back --target-dir base/2020-03-12_12-08-44/backup/ --user bac
 
 # fix privileges
 chown -R mysql:mysql /var/lib/mysql/
+
+# fix selinux context
+restorecon -Rv /var/lib/mysql
 
 # start mariadb
 systemctl start mariadb
