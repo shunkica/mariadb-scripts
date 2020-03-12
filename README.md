@@ -4,6 +4,8 @@
 
 Note: tested on CentOS 7 with MariaDB 10.4
 
+# [RESTORING BACKUPS DOES NOT WORK FOR SOME REASON](https://dba.stackexchange.com/questions/261782/mariadb-does-not-start-after-restoring-incremental-backups-with-mariabackup)
+
 Known issue: if one of the backups fails for some reason (eg. server restart or missing privilege), any subsequent updates will not be made ( "mariabackup: error: failed to read metadata from (...)/xtrabackup_checkpoints" )
 
 Workaround: delete the directory of the failed backup from the disk and run the script again
