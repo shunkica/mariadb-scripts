@@ -4,6 +4,10 @@
 
 Note: tested on CentOS 7 with MariaDB 10.4
 
+Known issue: if one of the backups fails for some reason (eg. server restart or missing privilege), any subsequent updates will not be made ( "mariabackup: error: failed to read metadata from (...)/xtrabackup_checkpoints" )
+Workaround: delete the failed backup directories from the disk and run the script again
+
+
 ## Links
 
 [Full Backup and Restore with Mariabackup](https://mariadb.com/kb/en/library/full-backup-and-restore-with-mariabackup/)
