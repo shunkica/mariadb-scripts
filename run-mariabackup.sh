@@ -12,7 +12,7 @@ MYSQL_USER=backup
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
 BACKCMD=mariabackup # Galera Cluster uses mariabackup instead of xtrabackup.
-BACKDIR=/data/mysql_backup
+BACKDIR=/home/mysqlbackup
 FULLBACKUPCYCLE=604800 # Create a new full backup every X seconds
 KEEP=3                 # Number of additional backups cycles a backup should kept for.
 
@@ -52,13 +52,15 @@ if test ! -d $INCRBACKDIR -o ! -w $INCRBACKDIR; then
     exit 1
 fi
 
-if mysqladmin "$USEROPTIONS" status | grep -q 'Uptime'; then
+# shellcheck disable=SC2086
+if ! mysqladmin $USEROPTIONS status | grep -q 'Uptime'; then
     echo "HALTED: MySQL does not appear to be running."
     echo
     exit 1
 fi
 
-if ! echo 'exit' | /usr/bin/mysql -s "$USEROPTIONS"; then
+# shellcheck disable=SC2086
+if ! echo 'exit' | /usr/bin/mysql -s $USEROPTIONS; then
     echo "HALTED: Supplied mysql username or password appears to be incorrect (not copied here for security, see script)"
     echo
     exit 1
@@ -100,7 +102,8 @@ if [ "$LATEST" ] && [ $((AGE + FULLBACKUPCYCLE + 5)) -ge "$START" ]; then
     mkdir -p "$TARGETDIR"
 
     # Create incremental Backup
-    $BACKCMD --backup "$USEROPTIONS" $ARGS --extra-lsndir="$TARGETDIR" --incremental-basedir="$INCRBASEDIR" --stream=xbstream | gzip >"$TARGETDIR/backup.stream.gz"
+    # shellcheck disable=SC2086
+    $BACKCMD --backup $USEROPTIONS $ARGS --extra-lsndir="$TARGETDIR" --incremental-basedir="$INCRBASEDIR" --stream=xbstream | gzip >"$TARGETDIR/backup.stream.gz"
 else
     echo 'New full backup'
 
@@ -108,7 +111,8 @@ else
     mkdir -p "$TARGETDIR"
 
     # Create a new full backup
-    $BACKCMD --backup "$USEROPTIONS" $ARGS --extra-lsndir="$TARGETDIR" --stream=xbstream | gzip >"$TARGETDIR/backup.stream.gz"
+    # shellcheck disable=SC2086
+    $BACKCMD --backup $USEROPTIONS $ARGS --extra-lsndir="$TARGETDIR" --stream=xbstream | gzip >"$TARGETDIR/backup.stream.gz"
 fi
 
 MINS=$((FULLBACKUPCYCLE * (KEEP + 1) / 60))
