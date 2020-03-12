@@ -4,8 +4,6 @@
 
 Note: tested on CentOS 7 with MariaDB 10.4
 
-# [RESTORING BACKUPS DOES NOT WORK FOR SOME REASON](https://dba.stackexchange.com/questions/261782/mariadb-does-not-start-after-restoring-incremental-backups-with-mariabackup)
-
 Known issue: if one of the backups fails for some reason (eg. server restart or missing privilege), any subsequent updates will not be made ( "mariabackup: error: failed to read metadata from (...)/xtrabackup_checkpoints" )
 
 Workaround: delete the directory of the failed backup from the disk and run the script again
@@ -70,9 +68,9 @@ zcat $i/backup.stream.gz | mbstream -x -C $i/backup/; \
 done
 
 # prepare
-mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --apply-log-only
-mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --apply-log-only --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-24-20/backup/
-mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --apply-log-only --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-54-25/backup/
+mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword"
+mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-24-20/backup/
+mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-54-25/backup/
 
 # stop mairadb
 systemctl stop mariadb
