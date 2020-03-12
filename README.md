@@ -33,55 +33,59 @@ Workaround: delete the directory of the failed backup from the disk and run the 
 ## Crontab
 
     #MySQL Backup, run every hour
-    0 */1 * * * MYSQL_PASSWORD=YourPassword bash /data/script/run-mariabackup.sh > /data/script/logs/run-mariabackup.sh.out 2>&1
+    0 */1 * * * MYSQL_PASSWORD=YourPassword /usr/local/sbin/run-mariabackup.sh > /var/log/run-mariabackup.log 2>&1
 
 ---
 
 ## Restore Example
 
-    tree /data/mysql_backup/
-    /data/mysql_backup/
+    # tree /home/mysqlbackup/
+    /home/mysqlbackup/
     ├── base
-    │   └── 2018-10-23_10-07-31
+    │   └── 2020-03-12_12-08-44
     │       ├── backup.stream.gz
-    │       └── xtrabackup_checkpoints
+    │       ├── xtrabackup_checkpoints
+    │       └── xtrabackup_info
     └── incr
-        └── 2018-10-23_10-07-31
-            ├── 2018-10-23_10-08-49
+        └── 2020-03-12_12-08-44
+            ├── 2020-03-12_13-24-20
             │   ├── backup.stream.gz
-            │   └── xtrabackup_checkpoints
-            └── 2018-10-23_10-13-58
+            │   ├── xtrabackup_checkpoints
+            │   └── xtrabackup_info
+            └── 2020-03-12_13-54-25
                 ├── backup.stream.gz
-                └── xtrabackup_checkpoints
+                ├── xtrabackup_checkpoints
+                └── xtrabackup_info
+
 
 ```bash
 # decompress
-cd /data/mysql_backup/
-for i in $(find . -name backup.stream.gz | grep '2018-10-23_10-07-31' | xargs dirname); \
+cd /home/mysqlbackup/
+for i in $(find . -name backup.stream.gz | grep '2020-03-12_12-08-44' | xargs dirname); \
 do \
 mkdir -p $i/backup; \
 zcat $i/backup.stream.gz | mbstream -x -C $i/backup/; \
 done
 
 # prepare
-mariabackup --prepare --target-dir base/2018-10-23_10-07-31/backup/ --user backup --password "YourPassword" --apply-log-only
-mariabackup --prepare --target-dir base/2018-10-23_10-07-31/backup/ --user backup --password "YourPassword" --apply-log-only --incremental-dir incr/2018-10-23_10-07-31/2018-10-23_10-08-49/backup/
-mariabackup --prepare --target-dir base/2018-10-23_10-07-31/backup/ --user backup --password "YourPassword" --apply-log-only --incremental-dir incr/2018-10-23_10-07-31/2018-10-23_10-13-58/backup/
+mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --apply-log-only
+mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --apply-log-only --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-24-20/backup/
+mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --apply-log-only --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-54-25/backup/
 
 # stop mairadb
-service mariadb stop
+systemctl stop mariadb
 
 # empty datadir
-mv /data/mysql/ /data/mysql_bak/
+mv /var/lib/mysql/ /var/lib/mysql_bak/
 
 # copy-back
-mariabackup --copy-back --target-dir base/2018-10-23_10-07-31/backup/ --user backup --password "YourPassword" --datadir /data/mysql/
+mariabackup --copy-back --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --datadir /var/lib/mysql/
 
 # fix privileges
-chown -R mysql:mysql /data/mysql/
+chown -R mysql:mysql /var/lib/mysql/
 
 # start mariadb
-service mariadb start
+systemctl start mariadb
 
 # done!
 ```
