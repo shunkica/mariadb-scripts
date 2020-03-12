@@ -41,6 +41,8 @@ Workaround: delete the directories of the failed backups and run the script agai
 
 ## Restore Example
 
+The script for restoring data from backups is intentionally left out, but here is an example of how you might do it.
+
     # tree /home/mysqlbackup/
     /home/mysqlbackup/
     ├── base
@@ -74,7 +76,7 @@ mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backu
 mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-24-20/backup/
 mariabackup --prepare --target-dir base/2020-03-12_12-08-44/backup/ --user backup --password "YourPassword" --incremental-dir incr/2020-03-12_12-08-44/2020-03-12_13-54-25/backup/
 
-# stop mairadb
+# stop mariadb
 systemctl stop mariadb
 
 # move datadir
