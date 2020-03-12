@@ -1,8 +1,8 @@
 # README
-
+*forked from [omegazeng/run-mariabackup.sh](https://github.com/omegazeng/run-mariabackup) which was*
 *forked from [jmfederico/run-xtrabackup.sh](https://gist.github.com/jmfederico/1495347)*
 
-Note: have tested on Ubuntu 18.04 with MariaDB 10.3
+Note: tested on CentOS 7 with MariaDB 10.4
 
 ## Links
 
@@ -14,11 +14,11 @@ Note: have tested on Ubuntu 18.04 with MariaDB 10.3
 
 ## Install mariabackup
 
-    sudo apt install mariadb-backup
+    yum install MariaDB-backup
 
 ## Create a backup user
 
-    GRANT RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'backup'@'localhost' identified by 'YourPassword';
+    GRANT PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'backup'@'localhost' identified by 'YourPassword';
     FLUSH PRIVILEGES;
 
 ## Usage
@@ -27,8 +27,8 @@ Note: have tested on Ubuntu 18.04 with MariaDB 10.3
 
 ## Crontab
 
-    #MySQL Backup
-    30 2 * * * MYSQL_PASSWORD=YourPassword bash /data/script/run-mariabackup.sh > /data/script/logs/run-mariabackup.sh.out 2>&1
+    #MySQL Backup, run every hour
+    0 */1 * * * MYSQL_PASSWORD=YourPassword bash /data/script/run-mariabackup.sh > /data/script/logs/run-mariabackup.sh.out 2>&1
 
 ---
 
