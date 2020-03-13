@@ -31,7 +31,7 @@ Note: tested on CentOS 7 with MariaDB 10.4
 ## Crontab
 
     #MySQL Backup, run every hour at the 30th minute
-    30 */1 * * * MYSQL_PASSWORD=YourPassword /bin/bash /usr/local/sbin/run-mariabackup.sh >> /var/log/run-mariabackup.log 2>&1
+    30 */1 * * * MYSQL_PASSWORD=YourPassword /bin/bash /usr/local/sbin/run-mariabackup.sh
 
 ---
 
