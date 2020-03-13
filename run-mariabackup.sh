@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Create a backup user:
 # GRANT PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'backup'@'localhost' identified by 'YourPassword';
 # FLUSH PRIVILEGES;
@@ -7,6 +6,9 @@
 # Usage:
 # MYSQL_PASSWORD=YourPassword bash run-mariabackup.sh
 
+if [[ $1 == "--retry" ]]; then
+  RUNBACKUPFAILED=true
+fi
 MYSQL_USER=backup
 #MYSQL_PASSWORD=Your_password
 MYSQL_HOST=localhost
@@ -34,7 +36,7 @@ START=$(date +%s)
 # Send email with error log in attachment
 function send_email() {
   echo "Sending email to ${MAILTO}"
-  printf "An error occured during MariaDB backup on %s:\n\n%s\n%s" "${HOSTNAME}" "$(grep -i error $ERRFILE)" "$1" | $MAILXCMD -s "MariaDB backup error on $HOSTNAME" -r ${MAILFROM} -S ${SMTPSERVER} -a $ERRFILE ${MAILTO}
+  printf "An error occured during MariaDB backup on %s:\n\n%s\n\n%s" "${HOSTNAME}" "$(grep -i error $ERRFILE)" "$1" | $MAILXCMD -s "MariaDB backup error on $HOSTNAME" -r ${MAILFROM} -S ${SMTPSERVER} -a $ERRFILE ${MAILTO}
 }
 
 {
@@ -137,11 +139,14 @@ function send_email() {
   if ! grep -q 'completed OK!' $ERRFILE; then
     echo "There were errors. Removing ${TARGETDIR}"
     rm -rf "${TARGETDIR:?}"
-    if grep -q 'failed to read metadata from' $ERRFILE; then
-      send_email "Detected invalid backup. Deleting ${INCRBASEDIR}"
+    if [[ $RUNBACKUPFAILED == "true" ]]; then
+      send_email "Problem could not be fixed automatically"
+    elif grep -q 'failed to read metadata from' $ERRFILE; then
+      send_email "Detected invalid backup. Deleting ${INCRBASEDIR} and retrying..."
       rm -rf "${INCRBASEDIR:?}"
+      $0 --retry
     else
-      send_email
+      send_email "Unknown reason"
     fi
     sync
     exit 1
