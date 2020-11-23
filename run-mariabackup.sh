@@ -160,8 +160,8 @@ function send_email() {
   # Delete old backups
   while IFS= read -r DEL; do
     echo "deleting $DEL"
-    rm -rf "${BASEBACKDIR:?}/$DEL"
-    rm -rf "${INCRBACKDIR:?}/$DEL"
+    rm -rf "${BASEBACKDIR:?}/${DEL:?}"
+    rm -rf "${INCRBACKDIR:?}/${DEL:?}"
   done < <(find $BASEBACKDIR -mindepth 1 -maxdepth 1 -type d -mmin +$MINS -printf "%P\n")
 
   SPENT=$(($(date +%s) - START))
