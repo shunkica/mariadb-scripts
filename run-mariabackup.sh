@@ -158,7 +158,7 @@ function send_email() {
   echo "Cleaning up old backups (older than $MINS minutes) and temporary files"
 
   # Delete old backups
-  while IFS= read -r -d '' DEL; do
+  while IFS= read -r DEL; do
     echo "deleting $DEL"
     rm -rf "${BASEBACKDIR:?}/$DEL"
     rm -rf "${INCRBACKDIR:?}/$DEL"
