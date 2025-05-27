@@ -6,15 +6,12 @@
 # Usage:
 # MYSQL_PASSWORD=YourPassword bash run-mariabackup.sh
 
-if [[ $1 == "--retry" ]]; then
-  RUNBACKUPFAILED=true
-fi
 MYSQL_USER=backup
 #MYSQL_PASSWORD=Your_password
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
 BACKCMD=mariabackup
-BACKDIR=/home/mysqlbackup
+BACKDIR=/home/mariabackup
 FULLBACKUPCYCLE=604800 # Create a new full backup every X seconds
 KEEP=5                 # Number of full backup cycles a backup should be kept for
 
@@ -25,6 +22,7 @@ INCRBACKDIR=$BACKDIR/incr
 
 LOGFILE=/var/log/run-mariabackup.log
 ERRFILE=/var/log/run-mariabackup.err
+LOCKFILE=/tmp/run-mariabackup.lock
 
 MAILXCMD=/bin/mailx
 MAILFROM=user1@example.com
@@ -38,6 +36,16 @@ function send_email() {
   echo "Sending email to ${MAILTO}"
   printf "An error occured during MariaDB backup on %s:\n\n%s\n\n%s" "${HOSTNAME}" "$(grep -i error $ERRFILE)" "$1" | $MAILXCMD -s "MariaDB backup error on $HOSTNAME" -r ${MAILFROM} -S ${SMTPSERVER} -a $ERRFILE ${MAILTO}
 }
+
+if [[ $1 == "--retry" ]]; then
+  RUNBACKUPFAILED=true
+else
+  exec 200>${LOCKFILE}
+  if ! flock -n 200; then
+    send_email "Another instance of run-mariabackup is already running."
+    exit 1
+  fi
+fi
 
 {
   echo "----------------------------"
