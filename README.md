@@ -26,12 +26,37 @@ Note: tested on CentOS 7 with MariaDB 10.4
 
 ## Usage
 
-    MYSQL_PASSWORD=YourPassword bash run-mariabackup.sh
+### Basic usage with environment variable:
+
+    DB_PASSWORD=YourPassword bash run-mariabackup.sh
+
+### Using a custom configuration file:
+
+    bash run-mariabackup.sh /path/to/config.env
+
+### Dry run mode:
+
+    bash run-mariabackup.sh --dry-run
+
+The `--dry-run` option will simulate the backup process without actually running backup commands, sending emails, or deleting files. This is useful for testing configuration and seeing what the script would do.
+
+The script will first load its default settings, then source the provided configuration file, allowing you to override any settings. Example config file:
+
+```bash
+# config.env
+DB_PASSWORD=YourPassword
+BACKUP_DIR=/custom/backup/path
+MAIL_TO=admin@example.com
+EMAIL_THROTTLE_SECONDS=7200
+```
 
 ## Crontab
 
     #MySQL Backup, run every hour at the 30th minute
-    30 */1 * * * MYSQL_PASSWORD=YourPassword /bin/bash /usr/local/sbin/run-mariabackup.sh
+    30 */1 * * * DB_PASSWORD=YourPassword /bin/bash /usr/local/sbin/run-mariabackup.sh
+    
+    # Or with custom config file:
+    30 */1 * * * /bin/bash /usr/local/sbin/run-mariabackup.sh /etc/mariabackup.conf
 
 ---
 

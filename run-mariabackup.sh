@@ -9,10 +9,12 @@
 #
 # Usage:
 # DB_PASSWORD=YourPassword bash run-mariabackup.sh
+# Or with custom config file:
+# DB_PASSWORD=YourPassword bash run-mariabackup.sh /path/to/config.env
 
-############
-# SETTINGS #
-############
+####################
+# DEFAULT SETTINGS #
+####################
 
 # Database
 DB_USER=backup
@@ -21,47 +23,82 @@ DB_HOST=localhost
 DB_PORT=3306
 
 # Backup
-BACKUP_CMD=mariabackup   # For MySQL you can use 'xtrabackup' instead
+BACKUP_CMD=mariabackup      # For MySQL you can use 'xtrabackup' instead
 BACKUP_DIR=/home/mariabackup
-BACKUP_FULL_CYCLE=604800 # Create a new full backup every X seconds
-BACKUP_KEEP=5            # Number of full backup cycles a backup should be kept for
+BACKUP_FULL_CYCLE=604800    # Create a new full backup every X seconds
+BACKUP_KEEP=5               # Number of full backup cycles a backup should be kept for
 
 # Email
-DISABLE_EMAIL_REPORTS=0  # 1 to disable reports
-MAIL_TO=user1@example.com
-MAIL_FROM=user2@example.com
+DISABLE_EMAIL_REPORTS=0     # 1 to disable reports
+#MAIL_TO=user1@example.com
+#MAIL_FROM=user2@example.com
 SMTP_SERVER=localhost
 MAILX_CMD=/usr/bin/mailx
 MSMTP_CMD=/usr/bin/msmtp
-MAIL_TYPE=mailx          # can be 'mailx' or 'msmtp'
+MAIL_TYPE=mailx              # can be 'mailx' or 'msmtp'
+EMAIL_THROTTLE_SECONDS=3600  # Don't send error emails more often than this (in seconds)
 
 # Logs
-LOG_FILE=/var/log/replication-status.log
-ERR_FILE=/var/log/replication-status.err
+LOG_FILE=/var/log/mariabackup.log
+ERR_FILE=/var/log/mariabackup-error.txt
 LOCK_FILE=/tmp/run-mariabackup.lock
+LAST_ERROR_EMAIL_FILE=/tmp/run-mariabackup-last-error-email
+LAST_SUCCESS_FILE=/tmp/run-mariabackup-last-success
 
 ################
 # END SETTINGS #
 ################
 
-dbOptions="--user=${DB_USER} --password=${DB_PASSWORD} --host=${DB_HOST} --port=${DB_PORT}"
-backupFullDir=$BACKUP_DIR/base
-backupIncrementalDir=$BACKUP_DIR/incr
-
-start=$(date +%s)
-
 # Send email with error log in attachment
 function send_email() {
   [[ "$DISABLE_EMAIL_REPORTS" -eq 1 ]] && return
 
+  if [[ -z "$MAIL_TO" || -z "$MAIL_FROM" || -z "$SMTP_SERVER" ]]; then
+    echo "ERROR: MAIL_TO and MAIL_FROM and SMTP_SERVER must be set when email reports are enabled."
+    return
+  fi
+
+  local current_time last_error_email_time time_since_last_error last_success_time
+
+  current_time=$(date +%s)
+
+  # Check if we should throttle this email
+  if [[ -f "$LAST_ERROR_EMAIL_FILE" ]]; then
+    last_error_email_time=$(cat "$LAST_ERROR_EMAIL_FILE" 2>/dev/null || echo 0)
+    time_since_last_error=$((current_time - last_error_email_time))
+
+    # Check if there was a successful run since the last error email
+    last_success_time=0
+    if [[ -f "$LAST_SUCCESS_FILE" ]]; then
+      last_success_time=$(cat "$LAST_SUCCESS_FILE" 2>/dev/null || echo 0)
+    fi
+
+    # If last error email was sent recently and no successful run since then, skip sending
+    if [[ $time_since_last_error -lt $EMAIL_THROTTLE_SECONDS ]] && [[ $last_success_time -lt $last_error_email_time ]]; then
+      echo "Skipping email - last error email sent $time_since_last_error seconds ago (throttle: ${EMAIL_THROTTLE_SECONDS}s) and no successful run since then"
+      return
+    fi
+  fi
+
+  [[ "$isDryRun" == true ]] && { echo "[DRY RUN] Would send email: $1"; return; }
+
   echo "Sending email to ${MAIL_TO}"
 
   subject="MariaDB backup error on $HOSTNAME"
-  body=$(printf "An error occurred during MariaDB backup on %s:\n\n%s\n\n%s" "$HOSTNAME" "$(grep -i error $ERR_FILE)" "$1")
+  if [[ -f "$ERR_FILE" ]]; then
+    error_details=$(grep -ai error "$ERR_FILE" | head -10)
+  else
+    error_details="Error file not found: $ERR_FILE"
+  fi
+  body=$(printf "An error occurred during MariaDB backup on %s:\n\n%s\n\n%s" "$HOSTNAME" "$error_details" "$1")
 
   case "$MAIL_TYPE" in
     mailx)
-      echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" -a "$ERR_FILE" "$MAIL_TO"
+      if [[ -f "$ERR_FILE" ]]; then
+        echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" -a "$ERR_FILE" "$MAIL_TO"
+      else
+        echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" "$MAIL_TO"
+      fi
       ;;
     msmtp)
       echo -e "Subject: $subject\nFrom: $MAIL_FROM\nTo: $MAIL_TO\n\n$body" | $MSMTP_CMD --file=/etc/msmtprc -a default "$MAIL_TO"
@@ -70,24 +107,94 @@ function send_email() {
       echo "Unknown MAIL_TYPE: $MAIL_TYPE" >&2
       ;;
   esac
+
+  # Record that we sent an error email
+  echo "$current_time" > "$LAST_ERROR_EMAIL_FILE"
 }
 
-if [[ $1 == "--retry" ]]; then
-  isRetry=true
-else
-  exec 200>${LOCK_FILE}
-  if ! flock -n 200; then
-    send_email "Another instance of run-mariabackup is already running."
-    exit 1
-  fi
-fi
+# Record successful completion
+function exit_ok() {
+  date +%s > "$LAST_SUCCESS_FILE"
+  echo "---------- EXIT 0 ----------"
+  exit 0
+}
+
+# Handle error exit with email notification
+function exit_error() {
+  local error_message="$1"
+  echo "$error_message"
+  send_email "$error_message"
+  echo "---------- EXIT 1 ----------"
+  exit 1
+}
 
 {
   echo "----------------------------"
-  echo
   echo "run-mariabackup.sh: MariaDB backup script"
   echo "started: $(date)"
   echo
+
+  # Parse command line arguments
+  envFilePath=""
+  isRetry=false
+  isDryRun=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --retry)
+        isRetry=true
+        ;;
+      --dry-run)
+        isDryRun=true
+        ;;
+      *)
+        envFilePath="$1"
+        ;;
+    esac
+    shift
+  done
+
+  echo "{ isRetry: $isRetry, isDryRun: $isDryRun, envFilePath: '$envFilePath' }"
+
+  # Source custom environment file if provided
+  if [[ -n "$envFilePath" ]]; then
+    if [[ -f "$envFilePath" ]]; then
+      echo "Sourcing configuration from: $envFilePath"
+      # shellcheck disable=SC1090
+      source "$envFilePath"
+    else
+      exit_error "Config file not found: $envFilePath"
+    fi
+  fi
+
+  # Check required variables
+  if [[ -z "$DB_PASSWORD" ]]; then
+    exit_error "DB_PASSWORD is not set. Please set it as an environment variable or in the config file."
+  fi
+
+  dbOptions=(
+    "--user=${DB_USER}"
+    "--password=${DB_PASSWORD}"
+    "--host=${DB_HOST}"
+    "--port=${DB_PORT}"
+  )
+  dbOptionsForLogging=(
+    "--user=${DB_USER}"
+    "--password=***"
+    "--host=${DB_HOST}"
+    "--port=${DB_PORT}"
+  )
+  backupFullDir=$BACKUP_DIR/base
+  backupIncrementalDir=$BACKUP_DIR/incr
+
+  start=$(date +%s)
+
+  if [[ $isRetry != true ]]; then
+    exec 200>${LOCK_FILE}
+    if ! flock -n 200; then
+      exit_error "Another instance of run-mariabackup is already running."
+    fi
+  fi
 
   if test ! -d $backupFullDir; then
     mkdir -p $backupFullDir
@@ -95,10 +202,7 @@ fi
 
   # Check base dir exists and is writable
   if test ! -d $backupFullDir -o ! -w $backupFullDir; then
-    error
-    echo $backupFullDir 'does not exist or is not writable'
-    echo
-    exit 1
+    exit_error "$backupFullDir does not exist or is not writable"
   fi
 
   if test ! -d $backupIncrementalDir; then
@@ -107,24 +211,15 @@ fi
 
   # check incr dir exists and is writable
   if test ! -d $backupIncrementalDir -o ! -w $backupIncrementalDir; then
-    error
-    echo $backupIncrementalDir 'does not exist or is not writable'
-    echo
-    exit 1
+    exit_error "$backupIncrementalDir does not exist or is not writable"
   fi
 
-  # shellcheck disable=SC2086
-  if ! mysqladmin $dbOptions status | grep -q 'Uptime'; then
-    echo "HALTED: MySQL does not appear to be running."
-    echo
-    exit 1
+  if ! mysqladmin "${dbOptions[@]}" status | grep -q 'Uptime'; then
+    exit_error "the database does not appear to be running"
   fi
 
-  # shellcheck disable=SC2086
-  if ! echo 'exit' | /usr/bin/mysql -s $dbOptions; then
-    echo "HALTED: Supplied mysql username or password appears to be incorrect (not copied here for security, see script)"
-    echo
-    exit 1
+  if ! echo 'exit' | /usr/bin/mysql -s "${dbOptions[@]}"; then
+    exit_error "the supplied database username or password appears to be incorrect"
   fi
 
   echo "Ready to start backup"
@@ -146,8 +241,7 @@ fi
 
     # Check incr sub dir exists and is writable
     if test ! -d "$backupIncrementalDir/$latestBackupDir" -o ! -w "$backupIncrementalDir/$latestBackupDir"; then
-      echo "$backupIncrementalDir/$latestBackupDir does not exist or is not writable"
-      exit 1
+      exit_error "$backupIncrementalDir/$latestBackupDir does not exist or is not writable"
     fi
 
     latestIncrementalBackupDir=$(find "$backupIncrementalDir/$latestBackupDir" -mindepth 1 -maxdepth 1 -type d | sort -nr | head -1)
@@ -160,26 +254,34 @@ fi
     fi
 
     targetDir=$backupIncrementalDir/$latestBackupDir/$(date +%F_%H-%M-%S)
-    mkdir -p "$targetDir"
-
+    
     # Create incremental Backup
-    # shellcheck disable=SC2086
-    $BACKUP_CMD --backup $dbOptions --extra-lsndir="$targetDir" --incremental-basedir="$INCRBASEDIR" --stream=xbstream 2> >(tee $ERR_FILE >&2) | gzip >"$targetDir/backup.stream.gz"
+    if [[ "$isDryRun" == true ]]; then
+      echo "[DRY RUN] Would run: $BACKUP_CMD --backup ${dbOptionsForLogging[*]} --extra-lsndir=\"$targetDir\" --incremental-basedir=\"$INCRBASEDIR\" --stream=xbstream | gzip >\"$targetDir/backup.stream.gz\""
+    else
+      mkdir -p "$targetDir"
+      $BACKUP_CMD --backup "${dbOptions[@]}" --extra-lsndir="$targetDir" --incremental-basedir="$INCRBASEDIR" --stream=xbstream 2> >(tee $ERR_FILE >&2) | gzip >"$targetDir/backup.stream.gz"
+    fi
 
   else
     echo 'New full backup'
 
     targetDir=$backupFullDir/$(date +%F_%H-%M-%S)
-    mkdir -p "$targetDir"
 
     # Create a new full backup
-    # shellcheck disable=SC2086
-    $BACKUP_CMD --backup $dbOptions --extra-lsndir="$targetDir" --stream=xbstream 2> >(tee $ERR_FILE >&2) | gzip >"$targetDir/backup.stream.gz"
+    if [[ "$isDryRun" == true ]]; then
+      echo "[DRY RUN] Would run: $BACKUP_CMD --backup ${dbOptionsForLogging[*]} --extra-lsndir=\"$targetDir\" --stream=xbstream | gzip >\"$targetDir/backup.stream.gz\""
+    else
+      mkdir -p "$targetDir"
+      $BACKUP_CMD --backup "${dbOptions[@]}" --extra-lsndir="$targetDir" --stream=xbstream 2> >(tee $ERR_FILE >&2) | gzip >"$targetDir/backup.stream.gz"
+    fi
 
   fi
 
   # If mariabackup didnt finish successfully delete invalid backups and exit
-  if ! grep -q 'completed OK!' $ERR_FILE; then
+  if [[ "$isDryRun" == true ]]; then
+    echo "[DRY RUN] Skipping backup completion check"
+  elif ! grep -q 'completed OK!' $ERR_FILE; then
     echo "There were errors. Removing ${targetDir}"
     rm -rf "${targetDir:?}"
     if [[ $isRetry == "true" ]]; then
@@ -187,7 +289,11 @@ fi
     elif grep -q 'failed to read metadata from' $ERR_FILE; then
       send_email "Detected invalid backup. Deleting ${INCRBASEDIR} and retrying..."
       rm -rf "${INCRBASEDIR:?}"
-      $0 --retry
+      if [[ -n "$envFilePath" ]]; then
+        $0 --retry "$envFilePath"
+      else
+        $0 --retry
+      fi
     else
       send_email "Unknown reason"
     fi
@@ -202,14 +308,20 @@ fi
 
   # Delete old backups
   while IFS= read -r DEL; do
-    echo "deleting $DEL"
-    rm -rf "${backupFullDir:?}/${DEL:?}"
-    rm -rf "${backupIncrementalDir:?}/${DEL:?}"
+    if [[ "$isDryRun" == true ]]; then
+      echo "[DRY RUN] Would delete $DEL"
+    else
+      echo "deleting $DEL"
+      rm -rf "${backupFullDir:?}/${DEL:?}"
+      rm -rf "${backupIncrementalDir:?}/${DEL:?}"
+    fi
   done < <(find $backupFullDir -mindepth 1 -maxdepth 1 -type d -mmin +$keepMins -printf "%P\n")
 
   timeSpent=$(($(date +%s) - start))
   echo
   echo "took $timeSpent seconds"
   echo "completed: $(date)"
-  exit 0
+  
+  # Record successful completion
+  exit_ok
 } 2>&1 | tee -a ${LOG_FILE}
