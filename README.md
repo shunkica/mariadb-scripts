@@ -1,40 +1,41 @@
-# README
-*forked from [omegazeng/run-mariabackup.sh](https://github.com/omegazeng/run-mariabackup) which was*
+# MariaDB/MySQL Database Scripts
+
+This repository contains two essential database management scripts:
+
+1. **run-mariabackup.sh** - Automated backup solution for MariaDB/MySQL with e-mail alerts
+2. **replication-status.sh** - Replication monitoring script with e-mail alerts
+
+*run-mariabackup.sh forked from [omegazeng/run-mariabackup.sh](https://github.com/omegazeng/run-mariabackup) which was*
 *forked from [jmfederico/run-xtrabackup.sh](https://gist.github.com/jmfederico/1495347)*
 
-Note: tested on CentOS 7 with MariaDB 10.4
-
-
-## Links
-
-[Full Backup and Restore with Mariabackup](https://mariadb.com/kb/en/library/full-backup-and-restore-with-mariabackup/)
-
-[Incremental Backup and Restore with Mariabackup](https://mariadb.com/kb/en/library/incremental-backup-and-restore-with-mariabackup/)
+Note: tested on Enterprise Linux 8 with MariaDB 10.11
 
 ---
 
-## Install
+## run-mariabackup.sh
+
+### Install
 
     yum -y install MariaDB-backup
-    curl https://raw.githubusercontent.com/shunkica/run-mariabackup/master/run-mariabackup.sh --output /usr/local/sbin/run-mariabackup.sh
+    curl https://raw.githubusercontent.com/shunkica/mariadb-scripts/refs/heads/master/run-mariabackup.sh --output /usr/local/sbin/run-mariabackup.sh
     chmod 700 /usr/local/sbin/run-mariabackup.sh
 
-## Create a backup user
+### Create a backup user
 
     GRANT PROCESS, RELOAD, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'backup'@'localhost' identified by 'YourPassword';
     FLUSH PRIVILEGES;
 
-## Usage
+### Usage
 
-### Basic usage with environment variable:
+#### Basic usage with environment variables:
 
-    DB_PASSWORD=YourPassword bash run-mariabackup.sh
+    DB_PASSWORD=YourPassword EMAIL_FROM=your@email EMAIL_TO=your@email bash run-mariabackup.sh
 
-### Using a custom configuration file:
+#### Using a custom configuration file:
 
     bash run-mariabackup.sh /path/to/config.env
 
-### Dry run mode:
+#### Dry run mode:
 
     bash run-mariabackup.sh --dry-run
 
@@ -50,17 +51,14 @@ MAIL_TO=admin@example.com
 EMAIL_THROTTLE_SECONDS=7200
 ```
 
-## Crontab
+Full list of configurable environment variables with their default values can be found at the start of the `run-mariabackup.sh` script.
+
+### Crontab
 
     #MySQL Backup, run every hour at the 30th minute
-    30 */1 * * * DB_PASSWORD=YourPassword /bin/bash /usr/local/sbin/run-mariabackup.sh
-    
-    # Or with custom config file:
-    30 */1 * * * /bin/bash /usr/local/sbin/run-mariabackup.sh /etc/mariabackup.conf
+    30 */1 * * * /bin/bash /usr/local/sbin/run-mariabackup.sh /etc/mariabackup.env > /dev/null
 
----
-
-## Restore Example
+### Restore Example
 
 The script for restoring data from backups is intentionally left out, but here is an example of how you might do it.
 
@@ -117,3 +115,59 @@ systemctl start mariadb
 
 # done!
 ```
+
+### Links
+
+[Full Backup and Restore with Mariabackup](https://mariadb.com/docs/server/server-usage/backup-and-restore/mariadb-backup/full-backup-and-restore-with-mariadb-backup)
+
+[Incremental Backup and Restore with Mariabackup](https://mariadb.com/docs/server/server-usage/backup-and-restore/mariadb-backup/incremental-backup-and-restore-with-mariadb-backup)
+
+---
+
+## replication-status.sh
+
+The script monitors MySQL/MariaDB replication status and alerts via email (or stderr if email is disabled) when issues are detected.
+
+*Based on [this script](https://handyman.dulare.com/mysql-replication-status-alerts-with-bash-script/)*
+
+### Features
+
+- Checks if the database is running
+- Alerts on:
+  - Slave IO not running
+  - Slave SQL not running
+  - Slave lag exceeds threshold ( default 300 seconds )
+- Sends email via `mailx` or `msmtp`
+- Logs activity to a file
+
+### Installation
+
+Create replication status user in the database:
+
+    CREATE USER 'replstatus'@'localhost' IDENTIFIED BY 'your_password';
+    GRANT SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'replstatus'@'localhost';
+    FLUSH PRIVILEGES;
+
+### Usage
+
+#### Basic usage with environment variables:
+
+    DB_PASSWORD=YourPassword EMAIL_FROM=your@email EMAIL_TO=your@email bash replication-status.sh
+
+#### Using a custom configuration file:
+
+    bash replication-status.sh /path/to/config.env
+
+#### Crontab
+
+Create a cron job to run the script every 5 minutes:
+
+    */5 * * * * /bin/bash /usr/local/sbin/replication-status.sh /etc/replication-status.env > /dev/null
+
+### Configuration
+
+Edit the script to configure:
+- `MAX_SECONDS_BEHIND` - Maximum acceptable replication lag (default: 300 seconds)
+- Database connection settings
+- Email notification settings
+- Log file locations
