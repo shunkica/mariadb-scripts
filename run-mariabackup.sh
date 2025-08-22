@@ -49,13 +49,19 @@ LAST_SUCCESS_FILE=/tmp/run-mariabackup-last-success
 # END SETTINGS #
 ################
 
+function print_error() {
+  local error_message="$1"
+  echo "$error_message"
+  echo "$error_message" >&3
+}
+
 # Send email with error log in attachment
 function send_email() {
   [[ "$DISABLE_EMAIL_REPORTS" -eq 1 ]] && return
 
   if [[ -z "$MAIL_TO" || -z "$MAIL_FROM" || -z "$SMTP_SERVER" ]]; then
-    echo "ERROR: MAIL_TO and MAIL_FROM and SMTP_SERVER must be set when email reports are enabled."
-    return
+    print_error "ERROR: MAIL_TO and MAIL_FROM and SMTP_SERVER must be set when email reports are enabled."
+    return 1
   fi
 
   local current_time last_error_email_time time_since_last_error last_success_time
@@ -76,7 +82,7 @@ function send_email() {
     # If last error email was sent recently and no successful run since then, skip sending
     if [[ $time_since_last_error -lt $EMAIL_THROTTLE_SECONDS ]] && [[ $last_success_time -lt $last_error_email_time ]]; then
       echo "Skipping email - last error email sent $time_since_last_error seconds ago (throttle: ${EMAIL_THROTTLE_SECONDS}s) and no successful run since then"
-      return
+      return 1
     fi
   fi
 
@@ -94,17 +100,20 @@ function send_email() {
 
   case "$MAIL_TYPE" in
     mailx)
-      if [[ -f "$ERR_FILE" ]]; then
-        echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" -a "$ERR_FILE" "$MAIL_TO"
-      else
-        echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" "$MAIL_TO"
+      if ! echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" ${ERR_FILE:+-a "$ERR_FILE"} "$MAIL_TO"; then
+        print_error "ERROR: Failed to send email via mailx"
+        return 1
       fi
       ;;
     msmtp)
-      echo -e "Subject: $subject\nFrom: $MAIL_FROM\nTo: $MAIL_TO\n\n$body" | $MSMTP_CMD --file=/etc/msmtprc -a default "$MAIL_TO"
+      if ! echo -e "Subject: $subject\nFrom: $MAIL_FROM\nTo: $MAIL_TO\n\n$body" | $MSMTP_CMD --file=/etc/msmtprc -a default "$MAIL_TO"; then
+        print_error "ERROR: Failed to send email via msmtp"
+        return 1
+      fi
       ;;
     *)
-      echo "Unknown MAIL_TYPE: $MAIL_TYPE" >&2
+      print_error "ERROR: Unknown MAIL_TYPE: $MAIL_TYPE"
+      return 1
       ;;
   esac
 
@@ -128,6 +137,7 @@ function exit_error() {
   exit 1
 }
 
+exec 3>&2  # save original stderr to fd 3
 {
   echo "----------------------------"
   echo "run-mariabackup.sh: MariaDB backup script"
@@ -324,4 +334,4 @@ function exit_error() {
   
   # Record successful completion
   exit_ok
-} 2>&1 | tee -a ${LOG_FILE}
+} |& tee -a ${LOG_FILE}

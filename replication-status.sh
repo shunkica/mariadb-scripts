@@ -51,8 +51,8 @@ function send_email() {
   [[ "$DISABLE_EMAIL_REPORTS" -eq 1 ]] && return
 
   if [[ -z "$MAIL_TO" || -z "$MAIL_FROM" || -z "$SMTP_SERVER" ]]; then
-    echo "ERROR: MAIL_TO and MAIL_FROM and SMTP_SERVER must be set when email reports are enabled."
-    return
+    print_error "ERROR: MAIL_TO and MAIL_FROM and SMTP_SERVER must be set when email reports are enabled."
+    return 1
   fi
 
   local current_time last_error_email_time time_since_last_error last_success_time
@@ -89,22 +89,31 @@ function send_email() {
 
   case "$MAIL_TYPE" in
     mailx)
-      if [[ -f "$ERR_FILE" ]]; then
-        echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" -a "$ERR_FILE" "$MAIL_TO"
-      else
-        echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" "$MAIL_TO"
+      if ! echo "$body" | $MAILX_CMD -s "$subject" -r "$MAIL_FROM" -S smtp="$SMTP_SERVER" ${ERR_FILE:+-a "$ERR_FILE"} "$MAIL_TO"; then
+        print_error "ERROR: Failed to send email via mailx"
+        return 1
       fi
       ;;
     msmtp)
-      echo -e "Subject: $subject\nFrom: $MAIL_FROM\nTo: $MAIL_TO\n\n$body" | $MSMTP_CMD --file=/etc/msmtprc -a default "$MAIL_TO"
+      if ! echo -e "Subject: $subject\nFrom: $MAIL_FROM\nTo: $MAIL_TO\n\n$body" | $MSMTP_CMD --file=/etc/msmtprc -a default "$MAIL_TO"; then
+        print_error "ERROR: Failed to send email via msmtp"
+        return 1
+      fi
       ;;
     *)
-      echo "Unknown MAIL_TYPE: $MAIL_TYPE" >&2
+      print_error "ERROR: Unknown MAIL_TYPE: $MAIL_TYPE"
+      return 1
       ;;
   esac
 
   # Record that we sent an error email
   echo "$current_time" > "$LAST_ERROR_EMAIL_FILE"
+}
+
+function print_error() {
+  local error_message="$1"
+  echo "$error_message"
+  echo "$error_message" >&3
 }
 
 # Record successful completion
@@ -123,7 +132,7 @@ function exit_error() {
   exit 1
 }
 
-
+exec 3>&2  # save original stderr to fd 3
 {
   echo "----------------------------"
   echo "replication-status.sh: MariaDB replication status check"
@@ -194,4 +203,4 @@ function exit_error() {
     echo "$(date +%Y%m%d_%H%M%S): Replication check finished OK."
     exit_ok
   fi
-} 2>&1 | tee -a ${LOG_FILE}
+} |& tee -a ${LOG_FILE}
